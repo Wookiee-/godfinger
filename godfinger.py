@@ -1,4 +1,5 @@
-# platform imports
+
+# Standard library imports
 import os
 import re
 import time
@@ -14,6 +15,27 @@ import sys
 import subprocess
 import tempfile
 import queue
+import copy
+
+
+# Project-specific imports
+import lib.shared.database as database
+import lib.shared.cvar as cvar
+import lib.shared.logMessage as logMessage
+import lib.shared.plugin as plugin
+import lib.shared.teams as teams
+import lib.shared.colors as colors
+import lib.shared.timeout as timeout
+import lib.shared.config as config
+import lib.shared.rcon as rcon
+import lib.shared.serverdata as serverdata
+import lib.shared.threadcontrol as threadcontrol
+import lib.shared.client as client
+import lib.shared.clientmanager as clientmanager
+import lib.shared.pk3 as pk3
+import godfingerEvent
+import godfingerAPI
+import godfingerinterface
 
 IsVenv = sys.prefix != sys.base_prefix
 if not IsVenv:
@@ -26,15 +48,26 @@ INVALID_ID = -1
 USERINFO_LEN = len("userinfo: ")
 
 CONFIG_DEFAULT_PATH = os.path.join(os.getcwd(),"godfingerCfg.json")
-# Things like port and ip can be omitted in future, since this thing is supposed to be sharing the filesystem with the server, it could read it's config for credentials.
-CONFIG_FALLBACK = \
-"""{
-    "Name":"MBII Godfinger : Consequetive Failure",
+# Minimal, user-editable config fallback. Edit 'Instances' for each server you want to run.
+CONFIG_FALLBACK = """
+// Edit Instances for each server instance you want to run.
+{
+    "Instances": [
+        {
+            "port": 29070,
+            "Plugins": [
+                {"path": "plugins.shared.test.testPlugin"}
+            ],
+            "Name": "Instance 1"
+        }
+    ],
+    // Set these for your platform.
     "MBIIPath": "your/path/here/",
-    "logFilename":"server.log",
-    "serverPath":"your/path/here/",
-    "serverFileName":"mbiided.x86.exe",
-    "logicDelay":0.016,
+    "serverPath": "your/path/here/",
+    "serverFileName": "mbiided.x86.exe",
+    "logFilename": "server.log",
+    // Optional global settings
+    "logicDelay": 0.016,
     "restartOnCrash": false,
     "watchdog": {
         "enabled": false,
@@ -46,40 +79,34 @@ CONFIG_FALLBACK = \
         "soft": false,
         "seconds": 1.5
     },
-
-    "interfaces":
-    {
-        "pty":
-        {
-            "target":"path/to/your/mbiided.exe",
-            "inputDelay":0.001
+    "interfaces": {
+        "pty": {
+            "target": "path/to/your/mbiided.exe",
+            "inputDelay": 0.001
         },
-        "rcon":
-        {
-            "ip":"localhost",
-            "bindAddress":"localhost",
-            "logReadDelay":0.1,
+        "rcon": {
+            "ip": "localhost",
+            "bindAddress": "localhost",
+            "logReadDelay": 0.1,
             "Remotes": [
                 {
-                    "port":29070,
-                    "logFilename":"server.log",
+                    "port": 29070,
+                    "logFilename": "server.log",
                     "qconsoleFilename": "qconsole.log",
-                    "password":"changeme"
+                    "password": "changeme"
                 }
             ],
             "Debug": {
-                "TestRetrospect":false
+                "TestRetrospect": false
             }
         }
     },
-    "interface":"rcon",
+    "interface": "rcon",
     "paths": ["./"],
-    "prologueMessage":"Initialized Godfinger System",
-    "epilogueMessage":"Finishing Godfinger System",
-    "Plugins": [
-        {"path":"plugins.shared.test.testPlugin"}
-    ]
-}"""
+    "prologueMessage": "Initialized Godfinger System",
+    "epilogueMessage": "Finishing Godfinger System"
+}
+"""
 
 def Sighandler(signum, frame):
     if signum == signal.SIGINT or signum == signal.SIGTERM or signum == signal.SIGABRT:
@@ -109,18 +136,7 @@ Args = Argparser.parse_args()
 
 Log = logging.getLogger(__name__)
 
-# custom imports
-import lib.shared.config as config
-import lib.shared.rcon as rcon
-import lib.shared.serverdata as serverdata
-import lib.shared.threadcontrol as threadcontrol
-import godfingerEvent
-import godfingerAPI
-import lib.shared.client as client
-import lib.shared.clientmanager as clientmanager
-import lib.shared.pk3 as pk3
 
-import copy
 
 def launch_instance(base_cfg, instance_cfg):
     cfg = copy.deepcopy(base_cfg)
