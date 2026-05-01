@@ -49,8 +49,8 @@ USERINFO_LEN = len("userinfo: ")
 
 CONFIG_DEFAULT_PATH = os.path.join(os.getcwd(),"godfingerCfg.json")
 # Minimal, user-editable config fallback. Edit 'Instances' for each server you want to run.
+# To add more servers, duplicate the object in the "Instances" array.
 CONFIG_FALLBACK = """
-// Edit Instances for each server instance you want to run.
 {
     "Instances": [
         {
@@ -61,12 +61,10 @@ CONFIG_FALLBACK = """
             "Name": "Instance 1"
         }
     ],
-    // Set these for your platform.
     "MBIIPath": "your/path/here/",
     "serverPath": "your/path/here/",
     "serverFileName": "mbiided.x86.exe",
     "logFilename": "server.log",
-    // Optional global settings
     "logicDelay": 0.016,
     "restartOnCrash": false,
     "watchdog": {
