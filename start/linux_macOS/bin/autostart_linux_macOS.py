@@ -9,6 +9,7 @@ import json
 target_file = "mbiided.i386"
 max_depth = 25
 
+# === Check autostart.cfg ===
 def should_autostart():
     config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'autostart.cfg'))
 
@@ -40,11 +41,19 @@ def should_autostart():
 
     return False
 
-if not should_autostart():
-    sys.exit(0)
+# NEW: Function to check if a specific server instance is running (by port)
+def is_instance_running(process_name, port):
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            if process_name.lower() in proc.info['name'].lower():
+                cmdline = ' '.join(proc.info['cmdline'])
+                if f"net_port {port}" in cmdline:
+                    return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied, TypeError):
+            continue
+    return False
 
 def get_godfinger_config():
-    # Try to find godfingerCfg.json in the current or parent directories
     current_dir = os.getcwd()
     depth = 0
     while depth < max_depth:
@@ -57,37 +66,31 @@ def get_godfinger_config():
             except Exception as e:
                 print(f"[AUTO-START] Error reading godfingerCfg.json: {e}")
                 return None
-        # Go up one directory
         current_dir = os.path.dirname(current_dir)
         depth += 1
     print(f"[AUTO-START] godfingerCfg.json not found after searching {max_depth} directories.")
     return None
+
+if not should_autostart():
+    sys.exit(0)
 
 cfg = get_godfinger_config()
 if not cfg or "Instances" not in cfg or not isinstance(cfg["Instances"], list):
     print("[AUTO-START] No valid Instances found in godfingerCfg.json. Nothing to launch.")
     sys.exit(0)
 
-# Get the current directory
 current_dir = os.getcwd()
 depth = 0
-
-# Loop to search for the file up to max_depth
 while depth < max_depth:
     print(f"[AUTO-START] Searching for {target_file} in: {current_dir}")
     if os.path.exists(os.path.join(current_dir, target_file)):
         full_path = os.path.join(current_dir, target_file)
         print(f"[AUTO-START] Found {target_file} at: {full_path}")
-
-        # Loop over all instances from config
         for instance in cfg["Instances"]:
             port = str(instance.get("port", "29070"))
             log_file = instance.get("logFilename", "server.log")
-
-            # Check if this specific instance is running (by port)
             if not is_instance_running(target_file, port):
                 print(f"[AUTO-START] {target_file} instance on port {port} is not running. Launching...")
-
                 args = [
                     full_path,
                     "--debug",
@@ -101,19 +104,14 @@ while depth < max_depth:
                     "+exec", "server.cfg",
                     "+set", "net_port", port
                 ]
-
                 if os.name == "nt":
                     subprocess.Popen(args, creationflags=subprocess.CREATE_NEW_CONSOLE)
                 else:
                     subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, start_new_session=True)
-
                 time.sleep(5)
             else:
                 print(f"[AUTO-START] {target_file} instance on port {port} is already running.")
-
-        break # Exit the search loop after finding the file and checking/launching all instances
-
-    # Go up one directory
+        break
     current_dir = os.path.dirname(current_dir)
     depth += 1
     if current_dir == os.path.abspath(os.sep):
@@ -123,21 +121,6 @@ while depth < max_depth:
     if depth >= max_depth:
         print(f"[AUTO-START] Reached max depth ({max_depth}) while searching for {target_file}.")
         break
-
 if depth >= max_depth:
     print(f"[AUTO-START] Could not find {target_file} after {max_depth} attempts.")
     print(f"[AUTO-START] Ensure godfinger installation is placed in a recursive subdirectory of JKA/GameData for automated starts.")
-
-def is_instance_running(process_name, port):
-    import psutil
-    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-        try:
-            # 1. Check if the process name matches the target file
-            if process_name.lower() in proc.info['name'].lower():
-                # 2. Check if the command line contains the specific port argument
-                cmdline = ' '.join(proc.info['cmdline'])
-                if f"net_port {port}" in cmdline:
-                    return True
-        except (psutil.NoSuchProcess, psutil.AccessDenied, TypeError):
-            continue
-    return False
