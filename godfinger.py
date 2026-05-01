@@ -266,7 +266,7 @@ def main():
             for srv in Servers:
                 srv.restartOnCrash = False
                 srv.Stop()
-	Log.info("All Godfinger instances stopped.")
+            Log.info("All Godfinger instances stopped.")
 
 
 class MBIIServer:
