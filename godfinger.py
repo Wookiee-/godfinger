@@ -266,36 +266,7 @@ def main():
             for srv in Servers:
                 srv.restartOnCrash = False
                 srv.Stop()
-            Log.info("All Godfinger instances stopped.")
-            ],
-
-            "Debug":
-            {
-                "TestRetrospect":false
-            }
-        }
-    },
-    "interface":"rcon",
-
-
-    "paths":
-    [
-        "./"
-    ],
-
-    "prologueMessage":"Initialized Godfinger System",
-
-    "epilogueMessage":"Finishing Godfinger System",
-
-    "Plugins":
-    [
-        {
-            "path":"plugins.shared.test.testPlugin"
-        }
-    ]
-
-}
-"""
+	Log.info("All Godfinger instances stopped.")
 
 
 class MBIIServer:
