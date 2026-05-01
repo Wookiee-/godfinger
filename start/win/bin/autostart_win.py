@@ -127,3 +127,17 @@ while depth < max_depth:
 if depth >= max_depth:
     print(f"[AUTO-START] Could not find {target_file} after {max_depth} attempts.")
     print(f"[AUTO-START] Ensure godfinger installation is placed in a recursive subdirectory of JKA/GameData for automated starts.")
+
+def is_instance_running(process_name, port):
+    import psutil
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            # 1. Check if the process name matches the target file
+            if process_name.lower() in proc.info['name'].lower():
+                # 2. Check if the command line contains the specific port argument
+                cmdline = ' '.join(proc.info['cmdline'])
+                if f"net_port {port}" in cmdline:
+                    return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied, TypeError):
+            continue
+    return False
