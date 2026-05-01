@@ -20,7 +20,66 @@ if not IsVenv:
     print("ERROR : Running outside of virtual environment, run prepare.bat on windows or prepare.sh on unix, then come back")
     sys.exit()
 
-Server = None
+
+
+INVALID_ID = -1
+USERINFO_LEN = len("userinfo: ")
+
+CONFIG_DEFAULT_PATH = os.path.join(os.getcwd(),"godfingerCfg.json")
+# Things like port and ip can be omitted in future, since this thing is supposed to be sharing the filesystem with the server, it could read it's config for credentials.
+CONFIG_FALLBACK = \
+"""{
+    "Name":"MBII Godfinger : Consequetive Failure",
+    "MBIIPath": "your/path/here/",
+    "logFilename":"server.log",
+    "serverPath":"your/path/here/",
+    "serverFileName":"mbiided.x86.exe",
+    "logicDelay":0.016,
+    "restartOnCrash": false,
+    "watchdog": {
+        "enabled": false,
+        "restartServer": false,
+        "serverStartCommand": ""
+    },
+    "floodProtection": {
+        "enabled": false,
+        "soft": false,
+        "seconds": 1.5
+    },
+
+    "interfaces":
+    {
+        "pty":
+        {
+            "target":"path/to/your/mbiided.exe",
+            "inputDelay":0.001
+        },
+        "rcon":
+        {
+            "ip":"localhost",
+            "bindAddress":"localhost",
+            "logReadDelay":0.1,
+            "Remotes": [
+                {
+                    "port":29070,
+                    "logFilename":"server.log",
+                    "qconsoleFilename": "qconsole.log",
+                    "password":"changeme"
+                }
+            ],
+            "Debug": {
+                "TestRetrospect":false
+            }
+        }
+    },
+    "interface":"rcon",
+    "paths": ["./"],
+    "prologueMessage":"Initialized Godfinger System",
+    "epilogueMessage":"Finishing Godfinger System",
+    "Plugins": [
+        {"path":"plugins.shared.test.testPlugin"}
+    ]
+}"""
 
 def Sighandler(signum, frame):
     if signum == signal.SIGINT or signum == signal.SIGTERM or signum == signal.SIGABRT:
@@ -60,64 +119,138 @@ import godfingerAPI
 import lib.shared.client as client
 import lib.shared.clientmanager as clientmanager
 import lib.shared.pk3 as pk3
-# queue imported at top
-import database
-import plugin
-import lib.shared.teams as teams
-import logMessage
-import math
-import lib.shared.colors as colors
-import cvar
-import godfingerinterface
-import lib.shared.timeout as timeout
-import lib.shared.pswd as pswd
-import lib.shared.observer as observer
 
-INVALID_ID = -1
-USERINFO_LEN = len("userinfo: ")
+import copy
 
-CONFIG_DEFAULT_PATH = os.path.join(os.getcwd(),"godfingerCfg.json")
-# Things like port and ip can be omitted in future, since this thing is supposed to be sharing the filesystem with the server, it could read it's config for credentials.
-CONFIG_FALLBACK = \
-"""{
-    "Name":"MBII Godfinger : Consequetive Failure",
-    "MBIIPath": "your/path/here/",
-    "logFilename":"server.log",
-    "serverPath":"your/path/here/",
-    "serverFileName":"mbiided.x86.exe",
-    "logicDelay":0.016,
-    "restartOnCrash": false,
-    "watchdog": {
-        "enabled": false,
-        "restartServer": false,
-        "serverStartCommand": ""
-    },
-    "floodProtection": {
-        "enabled": false,
-        "soft": false,
-        "seconds": 1.5
-    },
+def launch_instance(base_cfg, instance_cfg):
+    cfg = copy.deepcopy(base_cfg)
+    # Set port in Remotes for this instance
+    if "interfaces" in cfg and "rcon" in cfg["interfaces"] and "Remotes" in cfg["interfaces"]["rcon"]:
+        if len(cfg["interfaces"]["rcon"]["Remotes"]) > 0:
+            cfg["interfaces"]["rcon"]["Remotes"][0]["port"] = instance_cfg["port"]
+        else:
+            cfg["interfaces"]["rcon"]["Remotes"] = [{"port": instance_cfg["port"], "password": instance_cfg.get("password", "changeme") }]
+    # Set Plugins
+    cfg["Plugins"] = instance_cfg.get("Plugins", [])
+    # Optionally set Name
+    if "Name" in instance_cfg:
+        cfg["Name"] = instance_cfg["Name"]
+    # Write to a temp config file
+    tmp_cfg_path = os.path.join(tempfile.gettempdir(), f"godfinger_instance_{instance_cfg['port']}.json")
+    with open(tmp_cfg_path, "w") as f:
+        json.dump(cfg, f, indent=2)
+    # Patch the config loader to use this file
+    class InstanceServer(MBIIServer):
+        def __init__(self):
+            self._isFinished = False
+            self._isRunning = False
+            self._isRestarting = False
+            self._pluginManager = None
+            self._svInterfaces = []
+            self._primarySvInterface = None
+            self._gatheringExitData = False
+            self._exitLogMessages = []
+            startTime = time.time()
+            self._status = MBIIServer.STATUS_INIT
+            Log.info(f"Initializing Godfinger instance on port {instance_cfg['port']}...")
+            self._config = config.Config.from_file(tmp_cfg_path, "{}")
+            if self._config == None:
+                Log.error("Failed to load Godfinger config for instance.")
+                self._status = MBIIServer.STATUS_CONFIG_ERROR
+                return
+            super().__init__()
+    srv = InstanceServer()
+    return srv
 
-    "interfaces":
-    {
-        "pty":
-        {
-            "target":"path/to/your/mbiided.exe",
-            "inputDelay":0.001
-        },
-        "rcon":
-        {
-            "ip":"localhost",
-            "bindAddress":"localhost",
-            "logReadDelay":0.1,
-
-            "Remotes": [
-                {
-                    "port":29070,
-                    "logFilename":"server.log",
-                    "qconsoleFilename": "qconsole.log",
-                    "password":"fuckmylife"
-                }
+def main():
+    InitLogger()
+    Log.info("Godfinger entry point.")
+    global Server, Servers
+    Servers = []
+    CONFIG_DEFAULT_PATH = os.path.join(os.getcwd(),"godfingerCfg.json")
+    # If config file does not exist, create it from fallback
+    if not os.path.exists(CONFIG_DEFAULT_PATH):
+        with open(CONFIG_DEFAULT_PATH, "w") as f:
+            f.write(CONFIG_FALLBACK)
+        Log.info(f"No config found. Created default config at {CONFIG_DEFAULT_PATH}. Please edit it and restart Godfinger.")
+        print(f"\nA default config has been created at {CONFIG_DEFAULT_PATH}. Please fill it out and restart Godfinger.\n")
+        sys.exit(0)
+    # Load the main config file
+    with open(CONFIG_DEFAULT_PATH, "r") as f:
+        main_cfg = json.load(f)
+    instances = main_cfg.get("Instances", [])
+    if not instances:
+        # Fallback to legacy single-instance mode
+        Server = MBIIServer()
+        Servers.append(Server)
+        int_status = Server.GetStatus()
+        runAgain = True
+        if int_status == MBIIServer.STATUS_INIT:
+            while runAgain:
+                try:
+                    runAgain = False
+                    Server.Start()
+                except Exception as e:
+                    Log.error(f"ERROR occurred: Type: {type(e)}; Reason: {e}; Traceback: {traceback.format_exc()}")
+                    try:
+                        with open('lib/other/gf.txt', 'r') as file:
+                            gf = file.read()
+                            print("\n\n" + gf)
+                            file.close()
+                    except Exception as e:
+                        Log.error(f"ERROR occurred: No fucking god finger.txt")
+                    print("\n\nCRASH DETECTED, CHECK LOGS")
+                    Server.Finish()
+                    if Server.restartOnCrash:
+                        runAgain = True
+                        del Server
+                        Server = MBIIServer()
+                        int_status = Server.GetStatus()
+                        if int_status == MBIIServer.STATUS_INIT:
+                            continue
+                        else:
+                            break
+            int_status = Server.GetStatus()
+            if int_status == Server.STATUS_SERVER_NOT_RUNNING:
+                print("Unable to start with not running server for safety measures, abort init.")
+            Server.Finish()
+            if Server.IsRestarting():
+                del Server
+                Server = None
+                cmd = (" ".join( sys.argv ) )
+                dir = os.path.dirname(__file__)
+                cmd = os.path.normpath(os.path.join(dir, cmd))
+                cmd = (sys.executable + " " + cmd )
+                if IsWindows:
+                    subprocess.Popen(cmd, creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+                else:
+                    subprocess.Popen(cmd, shell=True, stdin=None, stdout=None, stderr=None, close_fds=True, start_new_session=True)
+                sys.exit()
+            del Server
+            Server = None
+        else:
+            Log.info("Godfinger initialize error %s" % (MBIIServer.StatusString(int_status)))
+        Log.info("The final gunshot was an exclamation mark on everything that had led to this point. I released my finger from the trigger, and it was over.")
+    else:
+        # Multi-instance mode
+        threads = []
+        for inst_cfg in instances:
+            srv = launch_instance(main_cfg, inst_cfg)
+            Servers.append(srv)
+            t = threading.Thread(target=srv.Start)
+            t.daemon = True
+            t.start()
+            threads.append(t)
+        Log.info(f"Launched {len(Servers)} Godfinger instances.")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            Log.info("Shutting down all Godfinger instances...")
+            for srv in Servers:
+                srv.restartOnCrash = False
+                srv.Stop()
+            Log.info("All Godfinger instances stopped.")
             ],
 
             "Debug":
