@@ -43,6 +43,26 @@ def should_autostart():
 if not should_autostart():
     sys.exit(0)
 
+def get_godfinger_config():
+    # Try to find godfingerCfg.json in the current or parent directories
+    current_dir = os.getcwd()
+    depth = 0
+    while depth < max_depth:
+        config_path = os.path.join(current_dir, "godfingerCfg.json")
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r") as f:
+                    cfg = json.load(f)
+                return cfg
+            except Exception as e:
+                print(f"[AUTO-START] Error reading godfingerCfg.json: {e}")
+                return None
+        # Go up one directory
+        current_dir = os.path.dirname(current_dir)
+        depth += 1
+    print(f"[AUTO-START] godfingerCfg.json not found after searching {max_depth} directories.")
+    return None
+
 cfg = get_godfinger_config()
 if not cfg or "Instances" not in cfg or not isinstance(cfg["Instances"], list):
     print("[AUTO-START] No valid Instances found in godfingerCfg.json. Nothing to launch.")
