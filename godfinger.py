@@ -504,10 +504,15 @@ class MBIIServer:
         Log.info("Loaded server data in %s seconds." %(str(time.time() - start_sd)))
 
 
+
         # Technical
         # Plugins
         self._pluginManager = plugin.PluginManager()
-        result = self._pluginManager.Initialize(self._config.cfg["Plugins"], self._serverData)
+        # Use per-instance Plugins if present (single-instance mode)
+        plugins_list = []
+        if "Instances" in self._config.cfg and isinstance(self._config.cfg["Instances"], list) and len(self._config.cfg["Instances"]) > 0:
+            plugins_list = self._config.cfg["Instances"][0].get("Plugins", [])
+        result = self._pluginManager.Initialize(plugins_list, self._serverData)
         if not result:
             self._status = MBIIServer.STATUS_PLUGIN_ERROR
             return
