@@ -485,6 +485,12 @@ class MBIIServer:
         exportAPI.GetPlugin         = self.API_GetPlugin
         exportAPI.Restart           = self.Restart
         self._serverData = serverdata.ServerData(self._pk3Manager, self._cvarManager, exportAPI, self._primarySvInterface, Args) # Use primary interface
+        instance_port = None
+        remotes = self._config.cfg.get("interfaces", {}).get("rcon", {}).get("Remotes", [])
+        if remotes and isinstance(remotes[0], dict):
+            instance_port = remotes[0].get("port")
+        self._serverData.instance_port = instance_port
+        self._serverData.instance_name = self._config.cfg.get("Name") or (str(instance_port) if instance_port is not None else None)
         extralives_path = os.path.join(os.path.dirname(__file__), "data", "extralives.json")
         try:
             with open(extralives_path, "r") as f:

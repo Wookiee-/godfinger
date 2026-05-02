@@ -9,11 +9,12 @@ import lib.shared.colors as colors
 import ipaddress
 import re
 import os
+from lib.shared.instance_config import get_instance_config_path
 import json
 
 SERVER_DATA = None
 
-CONFIG_DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "whitelistCfg.json")
+CONFIG_DEFAULT_PATH = None  # Will be set per-instance
 
 CONFIG_FALLBACK = \
 """{
@@ -29,8 +30,10 @@ CONFIG_FALLBACK = \
     ]
 }
 """
-global WhitelistConfig
-WhitelistConfig = config.Config.fromJSON(CONFIG_DEFAULT_PATH, CONFIG_FALLBACK)
+
+# Usage: pass serverData to get_instance_config_path when initializing
+# Example: config_path = get_instance_config_path("whitelist", serverData)
+# WhitelistConfig = config.Config.fromJSON(config_path, CONFIG_FALLBACK)
 
 # DISCLAIMER : DO NOT LOCK ANY OF THESE FUNCTIONS, IF YOU WANT MAKE INTERNAL LOOPS FOR PLUGINS - MAKE OWN THREADS AND MANAGE THEM, LET THESE FUNCTIONS GO.
 
@@ -43,7 +46,8 @@ class Whitelist():
     def __init__(self, serverData : serverdata.ServerData):
         self._status = 0
         self._serverData = serverData
-        self.config = WhitelistConfig
+        self._configPath = get_instance_config_path("whitelist", serverData)
+        self.config = config.Config.fromJSON(self._configPath, CONFIG_FALLBACK)
         self._messagePrefix = self.config.cfg["messagePrefix"]
 
         # Validate configuration
@@ -186,9 +190,9 @@ class Whitelist():
     def _SaveConfig(self):
         """Save current configuration to JSON file"""
         try:
-            with open(CONFIG_DEFAULT_PATH, "w") as f:
+            with open(self._configPath, "w") as f:
                 json.dump(self.config.cfg, f, indent=4)
-            Log.info("Configuration saved to %s", CONFIG_DEFAULT_PATH)
+            Log.info("Configuration saved to %s", self._configPath)
             return True
         except Exception as e:
             Log.error("Failed to save configuration: %s", e)

@@ -16,15 +16,37 @@ import time
 import json
 import asyncio
 import os
+from lib.shared.instance_config import get_instance_file_path
 
 SERVER_DATA = None
 Log = logging.getLogger(__name__)
 
-# Environment File
-env_file = os.path.join(os.path.dirname(__file__), "pugConfig.env")
+env_file = None
+QUEUE_TIMEOUT = None
+MAX_QUEUE_SIZE = None
+MIN_QUEUE_SIZE = None
+NEW_QUEUE_COOLDOWN = None
+BOT_TOKEN = None
+PUG_ROLE_ID = None
+ADMIN_ROLE_ID = None
+ALLOWED_CHANNEL_ID = None
+PUG_VC_IDS = []
+SERVER_PASSWORD = None
+STATIC_SERVER_IP = None
+COOLDOWN_FILE = None
+PERSIST_FILE = None
+EMBED_IMAGE = None
+GUILD_ID = None
 
-def check_and_create_env():
+
+def resolve_env_file(serverData):
+    return get_instance_file_path("pugConfig.env", serverData)
+
+
+def check_and_create_env(serverData):
     """Checks if the .env file exists and creates it with defaults if not."""
+    global env_file
+    env_file = resolve_env_file(serverData)
     if not os.path.exists(env_file):
         print(f"{env_file} not found. Creating a new one with default values.")
         with open(env_file, 'w') as f:
@@ -40,7 +62,7 @@ BOT_TOKEN=
 PUG_ROLE_ID=
 ADMIN_ROLE_ID=
 ALLOWED_CHANNEL_ID= # Text channel for commands and updates
-PUG_VC_IDS=         # Voice channels for automatic queue management, seperated by comma (e.g., 123456789,987654321)
+PUG_VC_IDS=         # Voice channels for automatic queue management, separated by comma (e.g., 123456789,987654321)
 SERVER_PASSWORD=None
 SERVER_IP=           # Static IP for display in embeds if SERVER_DATA.game_ip is not available dynamically
 GUILD_ID=            # The ID of your Discord server/guild for faster slash command syncing
@@ -73,40 +95,42 @@ def reset_env_vars(vars_list):
 
     Log.debug(f"Environment variables reset: {', '.join(vars_list)}")
 
-reset_env_vars(env_vars_to_reset)
-check_and_create_env()
 
-# --- Load Config from .env ---
-try:
-    QUEUE_TIMEOUT = int(os.getenv("QUEUE_TIMEOUT"))
-    MAX_QUEUE_SIZE = int(os.getenv("MAX_QUEUE_SIZE"))
-    MIN_QUEUE_SIZE = int(os.getenv("MIN_QUEUE_SIZE"))
-    NEW_QUEUE_COOLDOWN = int(os.getenv("NEW_QUEUE_COOLDOWN"))
+def load_runtime_config(serverData):
+    global QUEUE_TIMEOUT, MAX_QUEUE_SIZE, MIN_QUEUE_SIZE, NEW_QUEUE_COOLDOWN
+    global BOT_TOKEN, PUG_ROLE_ID, ADMIN_ROLE_ID, ALLOWED_CHANNEL_ID, PUG_VC_IDS
+    global SERVER_PASSWORD, STATIC_SERVER_IP, COOLDOWN_FILE, PERSIST_FILE, EMBED_IMAGE, GUILD_ID
 
-    BOT_TOKEN = os.getenv("BOT_TOKEN")
-    PUG_ROLE_ID = int(os.getenv("PUG_ROLE_ID"))
-    ADMIN_ROLE_ID = int(os.getenv("ADMIN_ROLE_ID"))
-    ALLOWED_CHANNEL_ID = int(os.getenv("ALLOWED_CHANNEL_ID"))
+    reset_env_vars(env_vars_to_reset)
+    check_and_create_env(serverData)
 
-    pug_vc_ids_str = os.getenv("PUG_VC_IDS")
-    if pug_vc_ids_str:
-        PUG_VC_IDS = [int(vc_id.strip()) for vc_id in pug_vc_ids_str.split(',') if vc_id.strip().isdigit()]
-    else:
-        PUG_VC_IDS = []
-    Log.info(f"Configured PUG Voice Channel IDs: {PUG_VC_IDS}")
+    try:
+        QUEUE_TIMEOUT = int(os.getenv("QUEUE_TIMEOUT"))
+        MAX_QUEUE_SIZE = int(os.getenv("MAX_QUEUE_SIZE"))
+        MIN_QUEUE_SIZE = int(os.getenv("MIN_QUEUE_SIZE"))
+        NEW_QUEUE_COOLDOWN = int(os.getenv("NEW_QUEUE_COOLDOWN"))
 
-    SERVER_PASSWORD = os.getenv("SERVER_PASSWORD")
-    STATIC_SERVER_IP = os.getenv("SERVER_IP")
-    COOLDOWN_FILE = os.path.join(os.path.dirname(__file__), os.getenv("COOLDOWN_FILE"))
-    PERSIST_FILE = os.path.join(os.path.dirname(__file__), os.getenv("PERSIST_FILE"))
-    EMBED_IMAGE = os.getenv("EMBED_IMAGE")
-    # Load GUILD_ID
-    GUILD_ID = int(os.getenv("GUILD_ID")) if os.getenv("GUILD_ID") else None
+        BOT_TOKEN = os.getenv("BOT_TOKEN")
+        PUG_ROLE_ID = int(os.getenv("PUG_ROLE_ID"))
+        ADMIN_ROLE_ID = int(os.getenv("ADMIN_ROLE_ID"))
+        ALLOWED_CHANNEL_ID = int(os.getenv("ALLOWED_CHANNEL_ID"))
 
-except Exception as e:
-    Log.error(f"Error loading environment variables: {e}. Please check your pugConfig.env file.")
-    # Exit or handle error appropriately if essential variables are missing/malformed
-    exit(1)
+        pug_vc_ids_str = os.getenv("PUG_VC_IDS")
+        if pug_vc_ids_str:
+            PUG_VC_IDS = [int(vc_id.strip()) for vc_id in pug_vc_ids_str.split(',') if vc_id.strip().isdigit()]
+        else:
+            PUG_VC_IDS = []
+        Log.info(f"Configured PUG Voice Channel IDs: {PUG_VC_IDS}")
+
+        SERVER_PASSWORD = os.getenv("SERVER_PASSWORD")
+        STATIC_SERVER_IP = os.getenv("SERVER_IP")
+        COOLDOWN_FILE = get_instance_file_path(os.getenv("COOLDOWN_FILE"), serverData)
+        PERSIST_FILE = get_instance_file_path(os.getenv("PERSIST_FILE"), serverData)
+        EMBED_IMAGE = os.getenv("EMBED_IMAGE")
+        GUILD_ID = int(os.getenv("GUILD_ID")) if os.getenv("GUILD_ID") else None
+    except Exception as e:
+        Log.error(f"Error loading environment variables: {e}. Please check your pugConfig.env file.")
+        exit(1)
 
 def create_persist_file():
     """Creates a temporary .persist file for recurring games in progress on shutdown event."""
@@ -743,6 +767,7 @@ def OnInitialize(serverData : serverdata.ServerData, exports = None) -> bool:
         format='%(asctime)s %(levelname)08s %(name)s %(message)s')
 
     SERVER_DATA = serverData
+    load_runtime_config(serverData)
     if exports != None:
         pass
     global PluginInstance

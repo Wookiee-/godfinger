@@ -7,14 +7,14 @@ import lib.shared.client as client
 import lib.shared.colors as colors
 import re
 import os
+from lib.shared.instance_config import get_instance_config_path, get_instance_file_path
 import json
 import time
 import threading
 
 SERVER_DATA = None
 
-CONFIG_DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "antipadawanCfg.json")
-TRACKING_FILE_PATH = os.path.join(os.path.dirname(__file__), "antipadawan_tracking.json")
+CONFIG_DEFAULT_PATH = None  # Will be set per-instance
 # Admin tracking is in-memory only (not persisted to disk - cleared on restart)
 
 CONFIG_FALLBACK = \
@@ -36,8 +36,10 @@ CONFIG_FALLBACK = \
     }
 }
 """
-global AntiPadawanConfig
-AntiPadawanConfig = config.Config.fromJSON(CONFIG_DEFAULT_PATH, CONFIG_FALLBACK)
+
+# Usage: pass serverData to get_instance_config_path when initializing
+# Example: config_path = get_instance_config_path("antipadawan", serverData)
+# AntiPadawanConfig = config.Config.fromJSON(config_path, CONFIG_FALLBACK)
 
 # DISCLAIMER : DO NOT LOCK ANY OF THESE FUNCTIONS, IF YOU WANT MAKE INTERNAL LOOPS FOR PLUGINS - MAKE OWN THREADS AND MANAGE THEM, LET THESE FUNCTIONS GO.
 
@@ -46,11 +48,19 @@ Log = logging.getLogger(__name__)
 
 PluginInstance = None
 
+
+class AntiPadawanConfigLoader:
+    @staticmethod
+    def load(serverData):
+        config_path = get_instance_config_path("antipadawan", serverData)
+        return config.Config.fromJSON(config_path, CONFIG_FALLBACK)
+
 class AntiPadawan():
     def __init__(self, serverData: serverdata.ServerData):
         self._status = 0
         self._serverData = serverData
-        self.config = AntiPadawanConfig
+        self._trackingFilePath = get_instance_file_path("antipadawan_tracking.json", serverData)
+        self.config = AntiPadawanConfigLoader.load(serverData)
         self._messagePrefix = self.config.cfg["messagePrefix"]
 
         # Validate configuration
@@ -624,8 +634,8 @@ class AntiPadawan():
     def _LoadTracking(self) -> dict:
         """Load tracking data from JSON file"""
         try:
-            if os.path.exists(TRACKING_FILE_PATH):
-                with open(TRACKING_FILE_PATH, "r") as f:
+            if os.path.exists(self._trackingFilePath):
+                with open(self._trackingFilePath, "r") as f:
                     tracking = json.load(f)
                 Log.debug(f"Loaded tracking data for {len(tracking)} IPs")
                 return tracking
@@ -639,7 +649,7 @@ class AntiPadawan():
     def _SaveTracking(self):
         """Save tracking data to JSON file"""
         try:
-            with open(TRACKING_FILE_PATH, "w") as f:
+            with open(self._trackingFilePath, "w") as f:
                 json.dump(self._tracking, f, indent=4)
             Log.debug(f"Saved tracking data for {len(self._tracking)} IPs")
         except Exception as e:

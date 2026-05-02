@@ -15,12 +15,12 @@ import psutil
 import requests
 import threading
 import platform
+from lib.shared.instance_config import get_instance_file_path
 
 SERVER_DATA = None;
 GODFINGER = "godfinger"
 Log = logging.getLogger(__name__);
 
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "gtConfig.json");
 PLACEHOLDER = "placeholder"
 PLACEHOLDER_PATH = "path/to/bat/or/sh"
 PLACEHOLDER_REPO = "placeholder/placeholder"
@@ -35,6 +35,15 @@ MANUALLY_UPDATED = False
 
 def get_godfinger_rwd():
     return os.path.dirname(os.path.abspath(__file__))
+
+def get_instance_data_file(file_name):
+    global PluginInstance, SERVER_DATA
+    server_data = SERVER_DATA
+    if server_data is None and 'PluginInstance' in globals() and PluginInstance is not None:
+        server_data = PluginInstance._serverData
+    if server_data is not None:
+        return get_instance_file_path(file_name, server_data)
+    return os.path.join(os.path.dirname(__file__), file_name)
 
 if os.name == 'nt':  # Windows
     GIT_PATH = shutil.which("git")
@@ -287,7 +296,8 @@ def check_git_installed():
         sys.exit(0)
 
 def create_config_placeholder():
-    if not os.path.exists(CONFIG_FILE):
+    config_file = get_instance_data_file("gtConfig.json")
+    if not os.path.exists(config_file):
         default_config = {
             "repositories": [
                 {
@@ -309,16 +319,17 @@ def create_config_placeholder():
             "isSVNBuilding": FALSE_VAR,
             "isGFBuilding": FALSE_VAR
         }
-        with open(CONFIG_FILE, "w") as f:
+        with open(config_file, "w") as f:
             json.dump(default_config, f, indent=2)
-        print(f"Created {CONFIG_FILE} with placeholder repositories.")
+        print(f"Created {config_file} with placeholder repositories.")
 
 def load_config():
-    if not os.path.exists(CONFIG_FILE):
-        print(f"Error: Config file '{CONFIG_FILE}' not found.")
+    config_file = get_instance_data_file("gtConfig.json")
+    if not os.path.exists(config_file):
+        print(f"Error: Config file '{config_file}' not found.")
         return None
 
-    with open(CONFIG_FILE, "r") as f:
+    with open(config_file, "r") as f:
         config = json.load(f)
 
     for repo in config.get("repositories", []):
@@ -340,13 +351,14 @@ def load_config():
     }
 
 def write_config(config_data):
+    config_file = get_instance_data_file("gtConfig.json")
     try:
-        with open(CONFIG_FILE, "w") as f:
+        with open(config_file, "w") as f:
             json.dump(config_data, f, indent=2)
-        Log.info(f"Configuration saved to {CONFIG_FILE}")
+        Log.info(f"Configuration saved to {config_file}")
         return True
     except Exception as e:
-        Log.error(f"Failed to save configuration to {CONFIG_FILE}: {e}")
+        Log.error(f"Failed to save configuration to {config_file}: {e}")
         return False
 
 def get_json_file_name(repo_url, branch_name):
@@ -354,7 +366,7 @@ def get_json_file_name(repo_url, branch_name):
     return f"{repo_name}_{branch_name}.json"
 
 def load_or_create_json(repo_url, branch_name):
-    config_dir = os.path.join(os.path.dirname(__file__), "jsonstore")
+    config_dir = get_instance_data_file("gittracker_jsonstore")
     if not os.path.exists(config_dir):
         os.makedirs(config_dir)
 

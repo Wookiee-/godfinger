@@ -7,11 +7,11 @@ from lib.shared.player import Player
 import logging
 import json
 import os
+from lib.shared.instance_config import get_instance_config_path
 from time import time
 
 Log = logging.getLogger(__name__)
 
-# Default configuration
 DEFAULT_CONFIG = {
     "enabled": True,
     "maxSpectatorRounds": 5,
@@ -70,11 +70,7 @@ class AntiAFKPlugin:
     
     def _load_config(self) -> dict:
         """Load configuration from JSON file or create default"""
-        config_path = os.path.join(
-            os.path.dirname(__file__),
-            "antiafk_config.json"
-        )
-        
+        config_path = get_instance_config_path("antiafk", self._serverData)
         if os.path.exists(config_path):
             try:
                 with open(config_path, 'r') as f:
@@ -85,7 +81,6 @@ class AntiAFKPlugin:
                 Log.error(f"Failed to load config: {e}. Using defaults.")
                 return DEFAULT_CONFIG
         else:
-            # Create default config file
             try:
                 with open(config_path, 'w') as f:
                     json.dump(DEFAULT_CONFIG, f, indent=4)

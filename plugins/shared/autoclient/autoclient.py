@@ -14,6 +14,7 @@ SMOD Commands:
 """
 
 import os
+from lib.shared.instance_config import get_instance_config_path
 import logging
 import subprocess
 import platform
@@ -33,8 +34,7 @@ Log = logging.getLogger(__name__)
 # Check if running on Windows
 IS_WINDOWS = platform.system() == 'Windows'
 
-# Default configuration
-CONFIG_DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "autoclientCfg.json")
+CONFIG_DEFAULT_PATH = None  # Will be set per-instance
 CONFIG_FALLBACK = """{
     "enabled": true,
     "maxFakeClients": 8,
@@ -49,10 +49,35 @@ CONFIG_FALLBACK = """{
     "serverProcessName": "mbiided.x86.exe"
 }"""
 
-AutoClientConfig = config.Config.fromJSON(CONFIG_DEFAULT_PATH, CONFIG_FALLBACK)
+
 
 SERVER_DATA = None
 PluginInstance = None
+
+class AutoClientConfigLoader:
+    @staticmethod
+    def load(serverData):
+        config_path = get_instance_config_path("autoclient", serverData)
+        return config.Config.fromJSON(config_path, CONFIG_FALLBACK)
+
+class AutoClientPlugin:
+    """Plugin to spawn and manage fake game clients"""
+
+    def __init__(self, serverData: serverdata.ServerData):
+        self._serverData = serverData
+        self.config = AutoClientConfigLoader.load(serverData)
+        self._messagePrefix = self.config.cfg.get("messagePrefix", "^6[AutoClient]^7: ")
+        self._runtimeEnabled = self.config.cfg.get("enabled", True)
+        self._fakeClients = {}  # pid -> FakeClient
+        self._nameIndex = 0
+        self._lastSpawnTime = 0
+        self._smodCommandList = {
+            tuple(["toggleautoclient", "tac"]): ("!toggleautoclient - Enable/disable AutoClient", self.HandleToggle),
+            tuple(["autoclientstatus", "acs"]): ("!autoclientstatus - Show client status", self.HandleStatus),
+            tuple(["spawnfake"]): ("!spawnfake <count> - Spawn fake clients", self.HandleSpawnFake),
+            tuple(["killfakes"]): ("!killfakes - Kill all fake clients", self.HandleKillFakes),
+        }
+        Log.info("AutoClient Plugin initialized")
 
 
 class FakeClient:
@@ -105,26 +130,18 @@ class AutoClientPlugin:
 
     def __init__(self, serverData: serverdata.ServerData):
         self._serverData = serverData
-
-        # Load config
-        self.config = AutoClientConfig
-
+        self.config = AutoClientConfigLoader.load(serverData)
         self._messagePrefix = self.config.cfg.get("messagePrefix", "^6[AutoClient]^7: ")
         self._runtimeEnabled = self.config.cfg.get("enabled", True)
-
-        # Client tracking
         self._fakeClients = {}  # pid -> FakeClient
         self._nameIndex = 0
         self._lastSpawnTime = 0
-
-        # SMOD command registration
         self._smodCommandList = {
             tuple(["toggleautoclient", "tac"]): ("!toggleautoclient - Enable/disable AutoClient", self.HandleToggle),
             tuple(["autoclientstatus", "acs"]): ("!autoclientstatus - Show client status", self.HandleStatus),
             tuple(["spawnfake"]): ("!spawnfake <count> - Spawn fake clients", self.HandleSpawnFake),
             tuple(["killfakes"]): ("!killfakes - Kill all fake clients", self.HandleKillFakes),
         }
-
         Log.info("AutoClient Plugin initialized")
 
     def _IsWindows(self) -> bool:

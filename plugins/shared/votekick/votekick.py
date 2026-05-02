@@ -17,6 +17,7 @@ Non-voters count as NO votes.
 Majority threshold is configurable.
 """
 
+
 import os
 import logging
 from time import time
@@ -29,11 +30,10 @@ import lib.shared.client as client
 import lib.shared.colors as colors
 import lib.shared.teams as teams
 from lib.shared.timeout import Timeout
+from lib.shared.instance_config import get_instance_config_path
 
 SERVER_DATA = None
 Log = logging.getLogger(__name__)
-
-CONFIG_DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "votekickCfg.json")
 
 CONFIG_FALLBACK = """{
     "enabled": true,
@@ -48,15 +48,14 @@ CONFIG_FALLBACK = """{
     "protectedIPsFile": ""
 }"""
 
-VotekickConfig = config.Config.fromJSON(CONFIG_DEFAULT_PATH, CONFIG_FALLBACK)
-
 PluginInstance = None
 
 
 class VotekickPlugin:
     def __init__(self, serverData: serverdata.ServerData):
         self._serverData = serverData
-        self.config = VotekickConfig
+        config_path = get_instance_config_path("votekick", serverData)
+        self.config = config.Config.fromJSON(config_path, CONFIG_FALLBACK)
         self._messagePrefix = self.config.cfg.get("messagePrefix", "^1[VoteKick]^7: ")
 
         # Vote state

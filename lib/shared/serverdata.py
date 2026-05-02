@@ -22,6 +22,8 @@ class ServerData():
         self.mapName = "";
         self.mode = -1;
         self.name = "";
+        self.instance_name = None
+        self.instance_port = None
         self.extralives_map = {}
         self.is_extended = False
     

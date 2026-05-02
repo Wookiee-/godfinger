@@ -1,3 +1,4 @@
+
 import logging
 import godfingerEvent
 import pluginExports
@@ -9,45 +10,18 @@ import database
 import lib.shared.client as client
 import requests
 import ipaddress
-
+from lib.shared.instance_config import get_instance_config_path
 
 SERVER_DATA = None
 
-CONFIG_DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "vpnmonitorCfg.json")
-
-# Not a new version just another option
-
-# To get your API keys goto https://findip.net/ and create an account, then create a API key in the dashboard.
-
-# User_Types from findip.net:
-# residential: IPs associated with residential internet connections, typically used by individuals in their homes.
-# cellular: IPs associated with mobile networks, often used by smartphones and tablets or mobile proxies/crawlers.
-# business: IPs associated with business internet connections, which may include offices, data centers, or other commercial entities.
-# hosting: IPs associated with hosting providers, which may include servers, virtual private servers (VPS), or cloud services.
-# unknown: IPs that could not be classified into the above categories, which may indicate an unrecognized or inconclusive VPN detection result.
-
-# whitelist is used to allow certain IP addresses that may be detected as VPNs but you want to allow them anyway.
-# blacklist is used incase the VPN is not recognized by third party services like findip, but you still consider those IP addresses a VPN.
-
-# action 0 = kick only, 1 = ban by ip then kick
-CONFIG_FALLBACK = \
-"""{
+CONFIG_FALLBACK = """{
     "apikey":"your_api_key",
-    "block":
-    [
-        "business", "hosting", "cellular"
-    ],
+    "block":["business", "hosting", "cellular"],
     "action":0,
     "svsayOnAction" : true
-}
-"""
-global VPNMonitorConfig
-VPNMonitorConfig = config.Config.fromJSON(CONFIG_DEFAULT_PATH, CONFIG_FALLBACK)
-
-# DISCLAIMER : DO NOT LOCK ANY OF THESE FUNCTIONS, IF YOU WANT MAKE INTERNAL LOOPS FOR PLUGINS - MAKE OWN THREADS AND MANAGE THEM, LET THESE FUNCTIONS GO.
+}"""
 
 Log = logging.getLogger(__name__)
-
 
 PluginInstance = None
 
@@ -55,7 +29,8 @@ class VPNMonitor():
     def __init__(self, serverData : serverdata.ServerData):
         self._status = 0
         self._serverData = serverData
-        self.config = VPNMonitorConfig
+        config_path = get_instance_config_path("vpnmonitor2", serverData)
+        self.config = config.Config.fromJSON(config_path, CONFIG_FALLBACK)
         self._messagePrefix = "^9[VPN]^7: "
         if self.config.cfg["apikey"] == "your_api_key":
             self._status = -1

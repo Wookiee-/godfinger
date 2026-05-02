@@ -12,6 +12,7 @@ import time
 from collections import deque
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from lib.shared.instance_config import get_instance_file_path
 
 # Initialize the Logger
 Log = logging.getLogger(__name__)
@@ -252,7 +253,7 @@ class GhostYodaPlugin(object):
 def load_env_variables():
     global DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, DISCORD_LINK, DISCORD_CHANNEL_REPORTS, DISCORD_CHANNEL_BANNED_ENTRY, DISCORD_CHANNEL_ADMIN_ACTIONS, DISCORD_CHANNEL_SERVER_CHAT_LOGS
     global DISCORD_CHAT_BRIDGE_MODE, DISCORD_CHAT_BRIDGE_PREFIX
-    env_file = os.path.join(os.path.dirname(__file__), "ghost_yoda.env")
+    env_file = get_instance_file_path("ghost_yoda.env", SERVER_DATA)
 
     if load_dotenv(env_file, override=True):
         DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")

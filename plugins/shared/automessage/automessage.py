@@ -4,6 +4,7 @@ import godfingerEvent;
 import pluginExports;
 import lib.shared.serverdata as serverdata
 import os;
+from lib.shared.instance_config import get_instance_config_path
 import lib.shared.config as config;
 import threading;
 import lib.shared.threadcontrol as threadcontrol;
@@ -13,7 +14,7 @@ import lib.shared.teams as teams;
 
 SERVER_DATA = None;
 
-CONFIG_DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "automessageCfg.json");
+CONFIG_DEFAULT_PATH = None  # Will be set per-instance
 CONFIG_FALLBACK = \
 """{
     "prefix":"^5[AutoMessage] ^7",
@@ -28,8 +29,10 @@ CONFIG_FALLBACK = \
     ]
 }
 """
-global AutomessageConfig;
-AutomessageConfig = config.Config.fromJSON(CONFIG_DEFAULT_PATH, CONFIG_FALLBACK)
+
+# Usage: pass serverData to get_instance_config_path when initializing
+# Example: config_path = get_instance_config_path("automessage", serverData)
+# AutomessageConfig = config.Config.fromJSON(config_path, CONFIG_FALLBACK)
 
 # DISCLAIMER : DO NOT LOCK ANY OF THESE FUNCTIONS, IF YOU WANT MAKE INTERNAL LOOPS FOR PLUGINS - MAKE OWN THREADS AND MANAGE THEM, LET THESE FUNCTIONS GO.
 
@@ -37,13 +40,20 @@ Log = logging.getLogger(__name__);
 
 PluginInstance = None;
 
+
+class AutomessageConfigLoader:
+    @staticmethod
+    def load(serverData):
+        config_path = get_instance_config_path("automessage", serverData)
+        return config.Config.fromJSON(config_path, CONFIG_FALLBACK)
+
 class Automessage():
     def __init__(self, serverData : serverdata.ServerData):
-        self._serverData = serverData;
-        self.config = AutomessageConfig;
-        self._threadLock = threading.Lock();
-        self._threadControl = threadcontrol.ThreadControl();
-        self._thread = threading.Thread(target=self._main_thread, daemon=True, args=(self._threadControl, self.config.cfg["interval"]));
+        self._serverData = serverData
+        self.config = AutomessageConfigLoader.load(serverData)
+        self._threadLock = threading.Lock()
+        self._threadControl = threadcontrol.ThreadControl()
+        self._thread = threading.Thread(target=self._main_thread, daemon=True, args=(self._threadControl, self.config.cfg["interval"]))
         self._allowLastMessageTwice = self.config.cfg["allowLastMessageTwice"]
         self._lastMessage = ""
         self._silenced_players = {}

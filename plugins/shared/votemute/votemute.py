@@ -28,12 +28,13 @@ import lib.shared.config as config
 import lib.shared.client as client
 import lib.shared.colors as colors
 import lib.shared.teams as teams
+from lib.shared.instance_config import get_instance_config_path
 from lib.shared.timeout import Timeout
 
 SERVER_DATA = None
 Log = logging.getLogger(__name__)
 
-CONFIG_DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "votemuteCfg.json")
+CONFIG_DEFAULT_PATH = None  # Will be set per-instance
 
 CONFIG_FALLBACK = """{
     "enabled": true,
@@ -48,15 +49,14 @@ CONFIG_FALLBACK = """{
     "protectedIPsFile": ""
 }"""
 
-VotemuteConfig = config.Config.fromJSON(CONFIG_DEFAULT_PATH, CONFIG_FALLBACK)
-
 PluginInstance = None
 
 
 class VotemutePlugin:
     def __init__(self, serverData: serverdata.ServerData):
         self._serverData = serverData
-        self.config = VotemuteConfig
+        config_path = get_instance_config_path("votemute", serverData)
+        self.config = config.Config.fromJSON(config_path, CONFIG_FALLBACK)
         self._messagePrefix = self.config.cfg.get("messagePrefix", "^5[VoteMute]^7: ")
 
         # Vote state
@@ -77,7 +77,6 @@ class VotemutePlugin:
             teams.TEAM_GOOD: {
                 tuple(["1"]): ("", self.HandleVoteYes),
                 tuple(["2"]): ("", self.HandleVoteNo),
-            },
             teams.TEAM_SPEC: {
                 tuple(["1"]): ("", self.HandleVoteYes),
                 tuple(["2"]): ("", self.HandleVoteNo),

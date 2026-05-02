@@ -11,28 +11,52 @@ import lib.shared.client as client
 import lib.shared.serverdata as serverdata
 import lib.shared.colors as colors
 import lib.shared.teams as teams
+from lib.shared.instance_config import get_instance_config_path, get_instance_file_path
 
 SERVER_DATA = None
 PluginInstance = None
 Log = logging.getLogger(__name__)
 
 
+
+class AutomodConfigLoader:
+    @staticmethod
+    def load(serverData):
+        config_path = get_instance_config_path("automod", serverData)
+        default_config = {
+            "enabled": True,
+            "prohibitedWords": ["badword"],
+            "prohibitedWordsFile": "",
+            "threshold": 3,
+            "action": 0,
+            "muteDuration": 5,
+            "tempbanDuration": 3,
+            "silentMode": False,
+            "messagePrefix": "^5[AutoMod]^7: ",
+            "privateMessage": "^1You have been flagged for using prohibited language. Further violations will result in punishment."
+        }
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    loaded = json.load(f)
+                    default_config.update(loaded)
+            else:
+                with open(config_path, 'w') as f:
+                    json.dump(default_config, f, indent=4)
+                Log.info(f"Created default configuration at {config_path}")
+        except Exception as e:
+            Log.error(f"Error loading config: {e}. Using defaults.")
+        return default_config
+
 class AutomodPlugin:
     def __init__(self, serverData: serverdata.ServerData):
         self._serverData = serverData
         self._status = 0
-
-        # Load configuration
-        self.config = self._LoadConfig()
+        self._violationLogPath = get_instance_file_path("automod_punishedPlayers.json", serverData)
+        self.config = AutomodConfigLoader.load(serverData)
         self._messagePrefix = self.config.get("messagePrefix", "^5[AutoMod]^7: ")
-
-        # Session data (resets on map change)
         self._session_violations = {}  # IP -> {count, name, punished_at_counts}
-
-        # Persistent data
         self._violation_log = self._LoadViolationLog()
-
-        # SMOD command list
         self._smodCommandList = {
             tuple(["kickoffenders"]): ("!kickoffenders - Kick all players with violations this session", self.HandleKickOffenders),
             tuple(["tempbanoffenders"]): ("!tempbanoffenders <rounds> - Tempban all offenders for N rounds", self.HandleTempbanOffenders),
@@ -42,7 +66,7 @@ class AutomodPlugin:
 
     def _LoadConfig(self) -> dict:
         """Load configuration from automodCfg.json, creating it with defaults if missing"""
-        config_path = os.path.join(os.path.dirname(__file__), "automodCfg.json")
+        config_path = get_instance_config_path("automod", self._serverData)
         default_config = {
             "enabled": True,
             "prohibitedWords": ["badword"],
@@ -126,10 +150,9 @@ class AutomodPlugin:
 
     def _LoadViolationLog(self) -> dict:
         """Load violation log from punishedPlayers.json"""
-        log_path = os.path.join(os.path.dirname(__file__), "punishedPlayers.json")
         try:
-            if os.path.exists(log_path):
-                with open(log_path, 'r') as f:
+            if os.path.exists(self._violationLogPath):
+                with open(self._violationLogPath, 'r') as f:
                     return json.load(f)
         except Exception as e:
             Log.error(f"Error loading violation log: {e}. Starting with empty log.")
@@ -137,9 +160,8 @@ class AutomodPlugin:
 
     def _SaveViolationLog(self):
         """Save violation log to punishedPlayers.json"""
-        log_path = os.path.join(os.path.dirname(__file__), "punishedPlayers.json")
         try:
-            with open(log_path, 'w') as f:
+            with open(self._violationLogPath, 'w') as f:
                 json.dump(self._violation_log, f, indent=4)
         except Exception as e:
             Log.error(f"Error saving violation log: {e}")

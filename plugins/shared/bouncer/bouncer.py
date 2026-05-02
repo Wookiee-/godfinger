@@ -18,6 +18,7 @@ whose names match antipadawan's detectedWords list to avoid duplicate punishment
 """
 
 import os
+from lib.shared.instance_config import get_instance_config_path, get_instance_file_path
 import re
 import json
 import logging
@@ -33,9 +34,7 @@ import lib.shared.colors as colors
 SERVER_DATA = None
 Log = logging.getLogger(__name__)
 
-CONFIG_DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "bouncerCfg.json")
-IP_LIST_PATH = os.path.join(os.path.dirname(__file__), "ipList.json")
-ANTIPADAWAN_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "antipadawan", "antipadawanCfg.json")
+CONFIG_DEFAULT_PATH = None  # Will be set per-instance
 
 CONFIG_FALLBACK = """{
     "enabled": true,
@@ -47,16 +46,28 @@ CONFIG_FALLBACK = """{
     "privateMessage": "This is a one-time authentication and will not occur again."
 }"""
 
-BouncerConfig = config.Config.fromJSON(CONFIG_DEFAULT_PATH, CONFIG_FALLBACK)
+
+# Usage: pass serverData to get_instance_config_path when initializing
+# Example: config_path = get_instance_config_path("bouncer", serverData)
+# BouncerConfig = config.Config.fromJSON(config_path, CONFIG_FALLBACK)
 
 PluginInstance = None
 
+
+
+class BouncerConfigLoader:
+    @staticmethod
+    def load(serverData):
+        config_path = get_instance_config_path("bouncer", serverData)
+        return config.Config.fromJSON(config_path, CONFIG_FALLBACK)
 
 class BouncerPlugin:
     def __init__(self, serverData: serverdata.ServerData):
         self._serverData = serverData
         self._status = 0
-        self.config = BouncerConfig
+        self._ipListPath = get_instance_file_path("bouncer_ipList.json", serverData)
+        self._antipadawanConfigPath = get_instance_config_path("antipadawan", serverData)
+        self.config = BouncerConfigLoader.load(serverData)
         self._messagePrefix = self.config.cfg.get("messagePrefix", "^3[Bouncer]^7: ")
 
         # Validate action value
@@ -78,8 +89,8 @@ class BouncerPlugin:
     def _LoadAntipadawanConfig(self) -> dict:
         """Load antipadawan config to check for name conflicts"""
         try:
-            if os.path.exists(ANTIPADAWAN_CONFIG_PATH):
-                with open(ANTIPADAWAN_CONFIG_PATH, 'r', encoding='utf-8') as f:
+            if os.path.exists(self._antipadawanConfigPath):
+                with open(self._antipadawanConfigPath, 'r', encoding='utf-8') as f:
                     cfg = json.load(f)
                     if cfg.get("enabled", True):
                         Log.info("Antipadawan config loaded - will skip punishment for matching names")
@@ -135,8 +146,8 @@ class BouncerPlugin:
     def _LoadIpList(self) -> dict:
         """Load IP list from ipList.json"""
         try:
-            if os.path.exists(IP_LIST_PATH):
-                with open(IP_LIST_PATH, 'r', encoding='utf-8') as f:
+            if os.path.exists(self._ipListPath):
+                with open(self._ipListPath, 'r', encoding='utf-8') as f:
                     return json.load(f)
         except Exception as e:
             Log.error(f"Error loading IP list: {e}. Starting with empty list.")
@@ -145,7 +156,7 @@ class BouncerPlugin:
     def _SaveIpList(self):
         """Save IP list to ipList.json"""
         try:
-            with open(IP_LIST_PATH, 'w', encoding='utf-8') as f:
+            with open(self._ipListPath, 'w', encoding='utf-8') as f:
                 json.dump(self._ipList, f, indent=4)
         except Exception as e:
             Log.error(f"Error saving IP list: {e}")

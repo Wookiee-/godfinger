@@ -9,6 +9,7 @@ import time
 import re
 from dotenv import load_dotenv
 from datetime import datetime
+from lib.shared.instance_config import get_instance_file_path
 
 # Initialize the Logger
 Log = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ class discordBotPlugin(object):
 # Load environment variables
 def load_env_variables():
     global DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, DISCORD_CHANNEL_ID, DISCORD_THREAD_ID, USE_THREAD, ADMIN_ROLE_ID
-    env_file = os.path.join(os.path.dirname(__file__), "discordbot.env")
+    env_file = get_instance_file_path("discordbot.env", SERVER_DATA)
     if not os.path.exists(env_file):
         print(f"{env_file} not found. Creating one...")
         with open(env_file, 'w') as f:

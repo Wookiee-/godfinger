@@ -1,108 +1,85 @@
 
-import logging;
-import godfingerEvent;
-import pluginExports;
+
+import logging
+import godfingerEvent
+import pluginExports
 import lib.shared.serverdata as serverdata
-import lib.shared.config as config;
-import os;
-import database;
-import lib.shared.client as client;
-import requests;
-import ipaddress;
+import lib.shared.config as config
+import os
+import database
+import lib.shared.client as client
+import requests
+import ipaddress
+from lib.shared.instance_config import get_instance_config_path
 
-SERVER_DATA = None;
+SERVER_DATA = None
+Log = logging.getLogger(__name__)
 
-CONFIG_DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "vpnmonitorCfg.json");
-
-# To get your API keys go to https://iphub.info/api
-
-# block means as followed by iphub docs 
-# block: 0 - Residential or business IP (i.e. safe IP)
-# block: 1 - Non-residential IP (hosting provider, proxy, etc.)
-# block: 2 - Non-residential & residential IP (warning, may flag innocent people)
-
-# blacklist is used incase the VPN is not recognized by third party services like iphub, but you still consider those IP addresses a VPN
-#   it will not be listed in database.
-# action 0 = kick only, 1 = ban by ip then kick
-CONFIG_FALLBACK = \
-"""{
+CONFIG_FALLBACK = """{
     "apikey":"your_api_key",
-    "block":
-    [
-        1, 2
-    ],
+    "block":[1, 2],
     "action":0,
-    "whitelist":
-    [
-        "127.0.0.1"
-    ],
-    "blacklist":
-    [
-    
-    ],
-    "svsayOnAction" : true
-}
-"""
-global VPNMonitorConfig;
-VPNMonitorConfig = config.Config.fromJSON(CONFIG_DEFAULT_PATH, CONFIG_FALLBACK)
+    "whitelist":["127.0.0.1"],
+    "blacklist":[],
+    "svsayOnAction": true
+}"""
 
-# DISCLAIMER : DO NOT LOCK ANY OF THESE FUNCTIONS, IF YOU WANT MAKE INTERNAL LOOPS FOR PLUGINS - MAKE OWN THREADS AND MANAGE THEM, LET THESE FUNCTIONS GO.
-
-Log = logging.getLogger(__name__);
+PluginInstance = None
 
 
-PluginInstance = None;
-
-class VPNMonitor():
-    def __init__(self, serverData : serverdata.ServerData):
-        self._status = 0;
-        self._serverData = serverData;
-        self.config = VPNMonitorConfig;
+class VPNMonitor:
+    def __init__(self, serverData: serverdata.ServerData):
+        self._status = 0
+        self._serverData = serverData
+        config_path = get_instance_config_path("vpnmonitor", serverData)
+        self.config = config.Config.fromJSON(config_path, CONFIG_FALLBACK)
         self._messagePrefix = "^9[VPN]^7: "
         if self.config.cfg["apikey"] == "your_api_key":
-            self._status -1;
-            Log.error("Please specify valid api key in vpnmonitorCfg.json");
-        
-        self._database : database.ADatabase = None;
-        dbPath = os.path.join(os.path.dirname(__file__), "vpn.db");
-        dbRes = self._serverData.API.CreateDatabase(dbPath, "vpnmonitor");
+            self._status = -1
+            Log.error("Please specify valid api key in vpnmonitorCfg.json")
+
+        self._database: database.ADatabase = None
+        dbPath = os.path.join(os.path.dirname(__file__), "vpn.db")
+        dbRes = self._serverData.API.CreateDatabase(dbPath, "vpnmonitor")
         if dbRes == database.DatabaseManager.DBM_RESULT_ALREADY_EXISTS or dbRes == database.DatabaseManager.DBM_RESULT_OK:
-            self._database = self._serverData.API.GetDatabase("vpnmonitor");
+            self._database = self._serverData.API.GetDatabase("vpnmonitor")
             self._database.ExecuteQuery("""CREATE TABLE IF NOT EXISTS iplist (
                                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                                         ip varchar(30),
                                         vpn int,
                                         date DATETIME DEFAULT CURRENT_TIMESTAMP
-                                        );""");
+                                        );""")
         else:
-            Log.error("Failed to create database at %s with code %d", (dbPath, str(dbRes)));
-            self._status = -1;
+            Log.error("Failed to create database at %s with code %d", dbPath, dbRes)
+            self._status = -1
+
 
     def Start(self) -> bool:
-        allClients = self._serverData.API.GetAllClients();
+        allClients = self._serverData.API.GetAllClients()
         for cl in allClients:
-            vpnType = self.GetIpVpnType(cl.GetIp());
-            self.ProcessVpnClient(cl, vpnType);
+            vpnType = self.GetIpVpnType(cl.GetIp())
+            self.ProcessVpnClient(cl, vpnType)
         if self._status == 0:
-            return True;
+            return True
         else:
-            return False;
+            return False
+
 
     def Finish(self):
-        pass;
+        pass
 
-    def OnClientConnect(self, client : client.Client, data : dict) -> bool:
-        vpnType = self.GetClientVPNType(client);
+
+    def OnClientConnect(self, client: client.Client, data: dict) -> bool:
+        vpnType = self.GetClientVPNType(client)
         if vpnType < 0:
-            return False;
-        self.ProcessVpnClient(client, vpnType);
-        return False;
-        
-    
-    def GetClientVPNType(self, client : client.Client) -> int:
-        ip = client.GetIp();
-        return self.GetIpVpnType(ip);
-        
+            return False
+        self.ProcessVpnClient(client, vpnType)
+        return False
+
+    def GetClientVPNType(self, client: client.Client) -> int:
+        ip = client.GetIp()
+        return self.GetIpVpnType(ip)
+
     def _IsIpMatch(self, ip: str, item) -> bool:
         try:
             target_ip = ipaddress.ip_address(ip)

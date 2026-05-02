@@ -18,6 +18,7 @@ from lib.shared.player import Player
 import lib.shared.teams as teams
 import lib.shared.colors as colors
 import lib.shared.config as config
+from lib.shared.instance_config import get_instance_config_path
 import godfingerEvent
 import json # Required for json.loads()
 
@@ -26,10 +27,6 @@ Log = logging.getLogger(__name__)
 
 # Global server data instance
 SERVER_DATA = None
-
-# Configuration file paths and defaults
-DEFAULT_CFG_PATH = os.path.join(os.path.dirname(__file__), "bankingConfig.json")
-DEFAULT_CFG = config.Config.fromJSON(DEFAULT_CFG_PATH)
 
 # Fallback configuration if config file doesn't exist
 CONFIG_FALLBACK = \
@@ -63,13 +60,16 @@ CONFIG_FALLBACK = \
 }
 """
 
-# Create default config if it doesn't exist
-if DEFAULT_CFG is None:
-    DEFAULT_CFG = config.Config()
-    DEFAULT_CFG.cfg = json.loads(CONFIG_FALLBACK)
-    Log.error(f"Could not open config file at {DEFAULT_CFG_PATH}, ensure the file is a valid JSON file in the correct file path.")
-    with open(DEFAULT_CFG_PATH, "wt") as f:
-        f.write(CONFIG_FALLBACK)
+def load_plugin_config(server_data: ServerData):
+    config_path = get_instance_config_path("igbc2", server_data)
+    loaded_config = config.Config.fromJSON(config_path, CONFIG_FALLBACK)
+    if loaded_config is None:
+        loaded_config = config.Config()
+        loaded_config.cfg = json.loads(CONFIG_FALLBACK)
+        Log.error(f"Could not open config file at {config_path}, ensure the file is a valid JSON file in the correct file path.")
+        with open(config_path, "wt") as f:
+            f.write(CONFIG_FALLBACK)
+    return loaded_config
 
 class PendingTransaction:
     def __init__(self, player):
@@ -263,9 +263,9 @@ class SiegeTeam:
     def __str__(self):
         return f"{self._name}"
 
-def GetAllTeams() -> list[SiegeTeam]:
+def GetAllTeams(plugin_config) -> list[SiegeTeam]:
     """Scan PK3 files in MBII directories to discover available teams"""
-    mbiiDir = os.path.abspath(DEFAULT_CFG.cfg["MBIIPath"])
+    mbiiDir = os.path.abspath(plugin_config.cfg["MBIIPath"])
     if not os.path.exists(mbiiDir):
         Log.info("Attempting to find MBII directory relative to the current working directory...")
         searchDir = os.getcwd()
@@ -303,18 +303,10 @@ def GetAllTeams() -> list[SiegeTeam]:
 class BankingPlugin:
 
     def __init__(self, server_data: ServerData):
+        self.config = load_plugin_config(server_data)
 
-        # START OF MODIFIED CODE FOR CONFIG LOADING
-        # Check if config loading failed and use fallback data
-        if DEFAULT_CFG is None or DEFAULT_CFG.cfg.get("MBIIPath") in [None, "your/mbii/path/here"]:
+        if self.config.cfg.get("MBIIPath") in [None, "your/mbii/path/here"]:
             Log.error("MBIIPath is not configured in bankingConfig.json. The GetAllTeams function will not work.")
-        if DEFAULT_CFG is None:
-            Log.warning("Default config failed to load from file. Using fallback configuration.")
-            # Create a minimal mock config object to prevent AttributeError: 'NoneType' object has no attribute 'cfg'
-            self.config = type('MockConfig', (object,), {'cfg': CONFIG_FALLBACK})()
-        else:
-            self.config = DEFAULT_CFG
-        # END OF MODIFIED CODE FOR CONFIG LOADING
 
         self.server_data = server_data
         self.accountsystem_xprts = None
@@ -337,7 +329,7 @@ class BankingPlugin:
         self.active_bounties : dict[int, Bounty] = {}  # target_id: Bounty
         self.player_rounds : dict[int, int] = {}  # player_id: rounds_played
         self.player_class_by_pid : dict[int, str] = {}  # player_id: current character/class name
-        self.team_container = SiegeTeamContainer(GetAllTeams(), self)
+        self.team_container = SiegeTeamContainer(GetAllTeams(self.config), self)
         self._register_commands()
         # self.initialize_banking_table()
 

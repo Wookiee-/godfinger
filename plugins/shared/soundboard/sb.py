@@ -9,6 +9,7 @@ import json
 import sys
 import os
 import time
+from lib.shared.instance_config import get_instance_file_path
 
 SERVER_DATA = None;
 Log = logging.getLogger(__name__);
@@ -18,13 +19,14 @@ Log = logging.getLogger(__name__);
 ## Ensure file extension is included #
 
 PLACEHOLDER = "placeholder"
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "sbConfig.json");
+CONFIG_FILE = None
 PYTHON_CMD = sys.executable
 
 class soundBoardPlugin(object):
     def __init__(self, serverData : serverdata.ServerData) -> None:
         self._serverData : serverdata.ServerData = serverData
         self._messagePrefix = colors.ColorizeText("[SB]", "lblue") + ": "
+        self._configFile = get_instance_file_path("soundboard_sbConfig.json", serverData)
         self.player_join_sound_path = None
         self.player_leave_sound_path = None
         self.message_global_sound_path = None
@@ -37,6 +39,7 @@ class ClientInfo():
 ClientsData : dict[int, ClientInfo] = {};
 
 def SV_LoadJson():
+    config_file = PluginInstance._configFile
 
     FALLBACK_JSON = {
         "PLAYERJOIN_SOUND_PATH": "placeholder",
@@ -45,16 +48,16 @@ def SV_LoadJson():
         "PLAYERSTART_SOUND_PATH": "placeholder"
     }
 
-    if not os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "w") as file:
+    if not os.path.exists(config_file):
+        with open(config_file, "w") as file:
             json.dump(FALLBACK_JSON, file, indent=4)
-        Log.info(f"Created {CONFIG_FILE} with default fallback values.")
+        Log.info(f"Created {config_file} with default fallback values.")
     
-    with open(CONFIG_FILE, "r") as file:
+    with open(config_file, "r") as file:
         CONFIG = json.load(file)
 
     if any(PLACEHOLDER in str(value) for value in CONFIG.values()):
-        Log.error(f"Placeholder values found in {CONFIG_FILE}, please fill out sbConfig.json and return...")
+        Log.error(f"Placeholder values found in {config_file}, please fill out the soundboard config and return...")
         sys.exit(0)
 
     PLAYERJOIN_SOUND_PATH = CONFIG["PLAYERJOIN_SOUND_PATH"]

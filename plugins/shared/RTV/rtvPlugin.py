@@ -71,10 +71,7 @@ Log = logging.getLogger(__name__)
 # Global server data instance
 SERVER_DATA = None
 
-# Configuration file paths and defaults
-DEFAULT_CFG_JSON = os.path.join(os.path.dirname(__file__), "rtvConfig.json")
-DEFAULT_CFG_YAML = os.path.join(os.path.dirname(__file__), "rtvConfig.yaml")
-DEFAULT_CFG = None
+from lib.shared.instance_config import get_instance_config_path
 
 # Fallback configuration if config file doesn't exist
 CONFIG_FALLBACK = '''{
@@ -171,26 +168,7 @@ CONFIG_FALLBACK = '''{
     }
 }'''
 
-# Try to load YAML config first, fall back to JSON if not found
-try:
-    if os.path.exists(DEFAULT_CFG_YAML):
-        DEFAULT_CFG = config.Config.from_file(DEFAULT_CFG_YAML, CONFIG_FALLBACK)
-        Log.info(f"Loaded configuration from YAML file: {DEFAULT_CFG_YAML}")
-    elif os.path.exists(DEFAULT_CFG_JSON):
-        DEFAULT_CFG = config.Config.from_file(DEFAULT_CFG_JSON, CONFIG_FALLBACK)
-        Log.info(f"Loaded configuration from JSON file: {DEFAULT_CFG_JSON}")
-    else:
-        # If neither file exists, create a default YAML config
-        DEFAULT_CFG = config.Config.FromString(CONFIG_FALLBACK)
-        with open(DEFAULT_CFG_YAML, 'w', encoding='utf-8') as f:
-            import yaml
-            yaml.dump(json.loads(CONFIG_FALLBACK), f, default_flow_style=False, sort_keys=False)
-        Log.warning(f"No config file found. Created default YAML config at: {DEFAULT_CFG_YAML}")
-except Exception as e:
-    Log.error(f"Error loading configuration: {str(e)}")
-    DEFAULT_CFG = config.Config()
-    DEFAULT_CFG.cfg = json.loads(CONFIG_FALLBACK)
-    Log.warning("Using default configuration due to error")
+
 
 # Map game modes to their internal IDs
 # Map game modes to their internal IDs
@@ -202,13 +180,7 @@ MBMODE_ID_MAP = {
     'legends' : 4
 }
 
-# Final check if we have a valid config
-if not hasattr(DEFAULT_CFG, 'cfg'):
-    Log.error("Failed to initialize configuration. Using default settings.")
-    DEFAULT_CFG.cfg = json.loads(CONFIG_FALLBACK)
-    Log.error(f"Could not open config file at {os.path.dirname(__file__) + 'rtvConfig.json, ensure the file is a valid JSON file in the correct file path.'}")
-    with open(DEFAULT_CFG_PATH, "wt") as f:
-        f.write(CONFIG_FALLBACK)
+
 
 # Initialize logger
 
@@ -349,7 +321,9 @@ class MapContainer(object):
 
 class RTVVote(object):
     """Base class for handling voting systems (RTV and RTM)"""
-    def __init__(self, voteOptions, voteTime=DEFAULT_CFG.cfg["rtv"]["voteTime"], announceCount = 1):
+    def __init__(self, voteOptions, voteTime=None, announceCount = 1):
+        if voteTime is None:
+            voteTime = PluginInstance._config.cfg["rtv"]["voteTime"]
         self._voteOptions : list[Map] = voteOptions
         self._voteTime = voteTime
         self._voteStartTime = None
@@ -408,7 +382,9 @@ class RTVVote(object):
 
 class RTMVote(RTVVote):
     """Specialized vote class for Rock the Mode (RTM)"""
-    def __init__(self, voteOptions, voteTime=DEFAULT_CFG.cfg["rtm"]["voteTime"], announceCount=1):
+    def __init__(self, voteOptions, voteTime=None, announceCount=1):
+        if voteTime is None:
+            voteTime = PluginInstance._config.cfg["rtm"]["voteTime"]
         super().__init__(voteOptions, voteTime, announceCount)
 
 class RTVPlayer(player.Player):
@@ -419,8 +395,9 @@ class RTVPlayer(player.Player):
 class RTV(object):
     """Main class implementing Rock the Vote (RTV) and Rock the Mode (RTM) functionality"""
     def __init__(self, serverData : serverdata.ServerData):
-        # Configuration setup
-        self._config : config.Config = DEFAULT_CFG
+        # Per-instance config loading
+        config_path = get_instance_config_path("rtv", serverData)
+        self._config : config.Config = config.Config.fromJSON(config_path, CONFIG_FALLBACK)
         self._themeColor = self._config.cfg["pluginThemeColor"]
         self._players : dict[int, RTVPlayer] = {}
         self._serverData : serverdata.ServerData = serverData
@@ -1524,10 +1501,8 @@ def OnEvent(event) -> bool:
 # Helper function to get all map names from currently installed PK3 files located in MBII directory and base directory next to MBII
 def GetAllMaps() -> list[Map]:
     """Scan PK3 files in MBII directories to discover available maps"""
-    # Start by assuming the MBII directory is not found
-    mbiiDir = os.path.abspath(DEFAULT_CFG.cfg["MBIIPath"])
+    mbiiDir = os.path.abspath(PluginInstance._config.cfg["MBIIPath"])
     if not os.path.exists(mbiiDir):
-        # Try to find the MBII directory relatively (this is now the primary method)
         Log.info("Attempting to find MBII directory relative to the current working directory...")
         searchDir = os.getcwd()
         while True:
@@ -1539,11 +1514,9 @@ def GetAllMaps() -> list[Map]:
                 oldDir = searchDir
                 searchDir = os.path.dirname(searchDir)
                 if oldDir == searchDir:
-                    # We've hit the top without finding the directory
                     Log.error("FAILURE. No MBII directory found through relative search.")
                     break
 
-    # Check if a path was successfully found
     if mbiiDir is None:
         Log.error("Cannot proceed as the MBII directory could not be located.")
         return []

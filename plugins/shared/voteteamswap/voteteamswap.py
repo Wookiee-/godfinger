@@ -26,12 +26,13 @@ import lib.shared.config as config
 import lib.shared.client as client
 import lib.shared.colors as colors
 import lib.shared.teams as teams
+from lib.shared.instance_config import get_instance_config_path
 from lib.shared.timeout import Timeout
 
 SERVER_DATA = None
 Log = logging.getLogger(__name__)
 
-CONFIG_DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "voteteamswapCfg.json")
+CONFIG_DEFAULT_PATH = None  # Will be set per-instance
 
 CONFIG_FALLBACK = """{
     "enabled": true,
@@ -43,15 +44,14 @@ CONFIG_FALLBACK = """{
     "messagePrefix": "^3[VoteTeamSwap]^7: "
 }"""
 
-VoteteamswapConfig = config.Config.fromJSON(CONFIG_DEFAULT_PATH, CONFIG_FALLBACK)
-
 PluginInstance = None
 
 
 class VoteteamswapPlugin:
     def __init__(self, serverData: serverdata.ServerData):
         self._serverData = serverData
-        self.config = VoteteamswapConfig
+        config_path = get_instance_config_path("voteteamswap", serverData)
+        self.config = config.Config.fromJSON(config_path, CONFIG_FALLBACK)
         self._messagePrefix = self.config.cfg.get("messagePrefix", "^3[VoteTeamSwap]^7: ")
 
         # Vote state
